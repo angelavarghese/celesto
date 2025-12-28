@@ -71,7 +71,7 @@ st.markdown("Search the NASA Archive or **drag the sliders** to design a world a
 # --- SIDEBAR: GLOBAL SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Global Settings")
-    use_api = st.checkbox("Use Gemini AI API", value=False)
+    use_api = st.checkbox("Use GenAI API", value=False)
     api_key = ""
     if use_api:
         api_key = st.text_input("Gemini API Key", type="password")
@@ -241,7 +241,7 @@ if 'analysis_result' in st.session_state:
             Scores: Atmos {scores['Atmos']:.2f}, Orbit {scores['Orbit']:.2f}, Surface {scores['Surface']:.2f}, Final {scores['Final']:.3f}.
             Write a 4-paragraph technical report.
             """
-            with st.spinner("🤖 Contacting Gemini AI..."):
+            with st.spinner("🤖 Contacting GenAI..."):
                 response = model.generate_content(prompt)
                 st.markdown(response.text)
         except Exception as e:
