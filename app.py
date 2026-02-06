@@ -69,7 +69,7 @@ with st.sidebar:
     use_api = st.checkbox("Use GenAI API", value=False)
     api_key = ""
     if use_api:
-        api_key = st.text_input("Gemini API Key", type="password")
+        api_key = st.text_input("GenAI API Key", type="password")
     
     st.info("💡 Tip: Try tweaking 'Distance' and 'Star Mass' to see how the Habitable Zone shifts!")
 
@@ -79,7 +79,8 @@ with st.spinner("🔭 Initializing Multi-Agent System..."):
     agents = train_models(df_data)
 
 # --- TABS: SEARCH VS CUSTOM ---
-tab1, tab2 = st.tabs(["🔍 Search Database", "🛠️ Custom Builder"])
+# tab1, tab2 = st.tabs(["🔍 Search Database", "🛠️ Custom Builder"])
+tab1, tab2, tab3 = st.tabs(["🔍 Search Database", "🛠️ Custom Builder", "📊 Model Validation"])
 
 # ==========================================
 # TAB 1: SEARCH DATABASE
@@ -117,11 +118,42 @@ with tab2:
 
     if st.button("🚀 Analyze Custom Build", key="btn_custom"):
         custom = {
-            'pl_name': p_name, 'pl_orbper': p_orb, 'pl_orbsmax': p_sdist,
-            'pl_rade_imputed': p_rad, 'pl_masse_imputed': p_mass, 'pl_dens': 5.5,
-            'st_mass': s_mass, 'st_teff': s_temp, 'pl_eqt': 255/(p_sdist**0.5),
-            'pl_insol': 1/(p_sdist**2), 'st_rad': s_mass, 'st_lum': s_mass**3.5,
-            'pl_ratdor': 215*p_sdist, 'pl_orbeccen': 0.0
+            # Core Sliders
+# --- User Input (Mapped to Sliders) ---
+            'pl_name': p_name, 
+            'pl_orbper': p_orb, 
+            'pl_orbsmax': p_sdist,
+            'pl_rade_imputed': p_rad, 
+            'pl_masse': p_mass, 
+            'st_mass': s_mass, 
+            'st_teff': s_temp, 
+            
+            # --- Direct Features (Required by ML Index) ---
+            'pl_dens': 5.51,        # Earth density default
+            'pl_orbeccen': 0.0,     # Circular orbit default
+            'pl_ratdor': 215 * p_sdist, # Distance/Radius ratio
+            'pl_ratror': 0.009,     # Planet/Star radius ratio
+            'sy_pnum': 1,           # Number of planets
+            
+            # --- Physics Placeholders (Calculated by apply_physics_engine) ---
+            'pl_eqt': np.nan, 
+            'pl_insol': np.nan, 
+            'st_rad': s_mass,       # Proxy: R scales with M for main sequence
+            'st_lum': np.nan,
+            'density_ratio': np.nan,
+            'mass_ratio': np.nan,
+            'tidal_lock_proxy': np.nan,
+            'temp_diff_norm': np.nan,
+            'escape_vel': np.nan,
+            'retention_prob': np.nan,
+            'stability_score': np.nan,
+
+            # --- Structural Keys (Required for data_processor logic) ---
+            'pl_massj': np.nan, 
+            'pl_radj': np.nan, 
+            'pl_bmasse': np.nan, 
+            'pl_rade': np.nan,
+            'st_spectype': None
         }
         st.session_state['analysis_result'] = analyze_single_planet(custom, agents)
         st.session_state['narrative_cache'] = ""
@@ -170,3 +202,55 @@ if 'analysis_result' in st.session_state:
             st.markdown(st.session_state['narrative_cache'])
     else:
         st.markdown(get_offline_text(s, p, res['name']))
+
+
+# ... (Tab 1 and Tab 2 code remains the same) ...
+
+# ==========================================
+# TAB 3: MODEL VALIDATION (Ablation & Metrics)
+# ==========================================
+with tab3:
+    st.header("🔬 Scientific Validation Dashboard")
+    st.info("This tab displays the performance metrics and ROC/PR curves used in the IEEE paper.")
+
+    if st.button("📈 Run Performance Suite"):
+        # 1. Prepare the test data from the bundle
+        # Note: You'll need to expose 'bundle' from your train_models function
+        bundle = dp.prepare_datasets(df_data)
+        X_test = bundle['X_test']
+        y_test = bundle['y_test']
+
+        # 2. Generate Predictions for all agents
+        # Atmosphere (Agent 1)
+        p1 = agents['a1']['model'].predict(agents['a1']['scaler'].transform(X_test[agents['a1']['features']].fillna(0)))
+        
+        # Orbit & Surface (Agents 2 & 3)
+        p2 = agents['a2']['model'].predict_proba(agents['a2']['scaler'].transform(X_test[agents['a2']['features']].fillna(0)))[:, 1]
+        p3 = agents['a3']['model'].predict_proba(agents['a3']['scaler'].transform(X_test[agents['a3']['features']].fillna(0)))[:, 1]
+        
+        # Director (Agent 4)
+        X_meta_test = np.column_stack((p1, p2, p3))
+        final_probs = agents['a4'].predict_proba(X_meta_test)[:, 1]
+        final_preds = (final_probs > 0.5).astype(int)
+
+        # 3. Call your reporting functions (from agent_trainer.py)
+        st.subheader("Final System Performance")
+        metrics = at.report_metrics(y_test, final_preds, final_probs, "Celesto Director")
+        
+        # Display metrics as Streamlit Columns
+        col1, col2, col3 = st.columns(3)
+        col1.metric("F1 Score", f"{metrics['F1']:.4f}")
+        col2.metric("Accuracy", f"{metrics['Acc']:.4f}")
+        col3.metric("Recall", f"{metrics['Rec']:.4f}")
+
+        # 4. Show the ROC/PR Curves
+        st.subheader("ROC and Precision-Recall Curves")
+        # We wrap the plt.show() logic to work with Streamlit
+        fig = at.plot_curves(y_test, {
+            "Atmos Agent": p1, 
+            "Orbit Agent": p2, 
+            "Surface Agent": p3, 
+            "Full Director": final_probs
+        })
+        st.pyplot(plt.gcf()) # Display the matplotlib figure in Streamlit
+# --- TABS: SEARCH VS CUSTOM VS VALIDATION ---
