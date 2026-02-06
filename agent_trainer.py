@@ -58,7 +58,61 @@ def train_agent4(a1, a2, a3, data_bundle):
     
     X_meta = np.column_stack((p1, p2, p3))
     model = LogisticRegression(class_weight='balanced', random_state=42)
+    # model = LogisticRegression(random_state=42)
     model.fit(X_meta, y_test)
     
     print(f"   Trust Weights -> Atmos: {model.coef_[0][0]:.2f} | Orbit: {model.coef_[0][1]:.2f} | Surface: {model.coef_[0][2]:.2f}")
     return model
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, 
+                             confusion_matrix, mean_absolute_error, mean_squared_error, 
+                             r2_score, roc_curve, precision_recall_curve, auc)
+
+def report_metrics(y_true, y_pred, y_prob=None, model_name="Model", is_regression=False):
+    print(f"\n📊 --- {model_name} Metrics ---")
+    if is_regression:
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        r2 = r2_score(y_true, y_pred)
+        print(f"MAE: {mae:.4f} | RMSE: {rmse:.4f} | R²: {r2:.4f}")
+        return {"MAE": mae, "RMSE": rmse, "R2": r2}
+    else:
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred)
+        rec = recall_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        print(f"Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f}")
+        
+        # Confusion Matrix
+        cm = confusion_matrix(y_true, y_pred)
+        plt.figure(figsize=(4,3))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+        plt.title(f"CM: {model_name}")
+        plt.ylabel('Actual')
+        plt.xlabel('Predicted')
+        plt.show()
+        return {"Acc": acc, "F1": f1, "Rec": rec}
+
+def plot_curves(y_true, probs_dict):
+    """Generates ROC and PR curves for all agents and the final Director."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    for name, probs in probs_dict.items():
+        # ROC Curve
+        fpr, tpr, _ = roc_curve(y_true, probs)
+        roc_auc = auc(fpr, tpr)
+        ax1.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.2f})')
+        
+        # PR Curve
+        precision, recall, _ = precision_recall_curve(y_true, probs)
+        ax2.plot(recall, precision, label=f'{name}')
+    
+    ax1.set_title('Receiver Operating Characteristic (ROC)')
+    ax1.legend()
+    ax2.set_title('Precision-Recall (PR) Curve')
+    ax2.legend()
+    plt.tight_layout()
+    plt.show()
